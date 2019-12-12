@@ -44,6 +44,11 @@
 #include <linux/iio/iio.h>
 #include <linux/regulator/consumer.h>
 
+#include <linux/iio/sysfs.h>
+#include <linux/iio/buffer.h>
+#include <linux/iio/trigger_consumer.h>
+#include <linux/iio/triggered_buffer.h>
+
 enum {
 	mcp3001,
 	mcp3002,
@@ -94,6 +99,25 @@ struct mcp320x {
 	u8 tx_buf ____cacheline_aligned;
 	u8 rx_buf[4];
 };
+
+static irqreturn_t mcp320x_trigger_handler(int irq, void *p)
+{
+	struct iio_poll_func *pf = p;
+	struct iio_dev *indio_dev = pf->indio_dev;
+	struct mcp320x *adc = iio_priv(indio_dev);
+	int b_sent;
+
+	b_sent = spi_sync(adc->spi, &adc->msg);
+	if (b_sent < 0)
+		goto done;
+
+	iio_push_to_buffers_with_timestamp(indio_dev, adc->rx_buf,
+		iio_get_time_ns(indio_dev));
+done:
+	iio_trigger_notify_done(indio_dev->trig);
+
+	return IRQ_HANDLED;
+}
 
 static int mcp320x_channel_to_tx_data(int device_index,
 			const unsigned int channel, bool differential)
@@ -447,14 +471,23 @@ static int mcp320x_probe(struct spi_device *spi)
 
 	mutex_init(&adc->lock);
 
-	ret = iio_device_register(indio_dev);
+	ret = iio_triggered_buffer_setup(indio_dev, NULL,
+					mcp320x_trigger_handler, NULL);
+
 	if (ret < 0)
 		goto reg_disable;
+
+	ret = iio_device_register(indio_dev);
+
+	if (ret)
+		goto buffer_cleanup;
 
 	return 0;
 
 reg_disable:
 	regulator_disable(adc->reg);
+buffer_cleanup:
+	iio_triggered_buffer_cleanup(indio_dev);
 
 	return ret;
 }
@@ -465,6 +498,7 @@ static int mcp320x_remove(struct spi_device *spi)
 	struct mcp320x *adc = iio_priv(indio_dev);
 
 	iio_device_unregister(indio_dev);
+	iio_triggered_buffer_cleanup(indio_dev);
 	regulator_disable(adc->reg);
 
 	return 0;
