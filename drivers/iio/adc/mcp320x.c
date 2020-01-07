@@ -274,10 +274,18 @@ out:
 		.differential = 1,				\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),	\
 		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE) \
+		.scan_type = {					\
+			.sign = 'u',				\
+			.realbits = 12,				\
+			.storagebits = 16,			\
+			.shift = 3,				\
+			.endianness = IIO_BE,			\
+		},						\
 	}
 
 static const struct iio_chan_spec mcp3201_channels[] = {
 	MCP320X_VOLTAGE_CHANNEL_DIFF(0, 1),
+	IIO_CHAN_SOFT_TIMESTAMP(1),
 };
 
 static const struct iio_chan_spec mcp3202_channels[] = {
@@ -285,6 +293,7 @@ static const struct iio_chan_spec mcp3202_channels[] = {
 	MCP320X_VOLTAGE_CHANNEL(1),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(0, 1),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(1, 0),
+	IIO_CHAN_SOFT_TIMESTAMP(4),
 };
 
 static const struct iio_chan_spec mcp3204_channels[] = {
@@ -296,6 +305,7 @@ static const struct iio_chan_spec mcp3204_channels[] = {
 	MCP320X_VOLTAGE_CHANNEL_DIFF(1, 0),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(2, 3),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(3, 2),
+	IIO_CHAN_SOFT_TIMESTAMP(8),
 };
 
 static const struct iio_chan_spec mcp3208_channels[] = {
@@ -315,6 +325,7 @@ static const struct iio_chan_spec mcp3208_channels[] = {
 	MCP320X_VOLTAGE_CHANNEL_DIFF(5, 4),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(6, 7),
 	MCP320X_VOLTAGE_CHANNEL_DIFF(7, 6),
+	IIO_CHAN_SOFT_TIMESTAMP(16),
 };
 
 static const struct iio_info mcp320x_info = {
