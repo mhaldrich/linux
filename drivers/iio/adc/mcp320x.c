@@ -105,15 +105,32 @@ static irqreturn_t mcp320x_trigger_handler(int irq, void *p)
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct mcp320x *adc = iio_priv(indio_dev);
-	int b_sent;
+	u8 data[24] = { }; /* 16x 1 byte ADC data + 8 bytes timestamp */
+	int scan_index;
+	int i = 0;
 
-	b_sent = spi_sync(adc->spi, &adc->msg);
-	if (b_sent < 0)
-		goto done;
+	mutex_lock(&adc->lock);
 
-	iio_push_to_buffers_with_timestamp(indio_dev, adc->rx_buf,
+	for_each_set_bit(scan_index, indio_dev->active_scan_mask,
+			 indio_dev->masklength) {
+		const struct iio_chan_spec *scan_chan =
+				&indio_dev->channels[scan_index];
+		int ret = mcp320x_adc_conversion(adc, scan_chan->channel,
+						 scan_chan->differential);
+		if (ret < 0) {
+			dev_warn(&adc->spi->dev,
+				 "failed to get conversion data\n");
+			goto out;
+		}
+
+		data[i] = ret;
+		i++;
+	}
+	iio_push_to_buffers_with_timestamp(indio_dev, data,
 		iio_get_time_ns(indio_dev));
-done:
+out:
+	mutex_unlock(&adc->lock);
+	
 	iio_trigger_notify_done(indio_dev->trig);
 
 	return IRQ_HANDLED;
@@ -273,7 +290,7 @@ out:
 		.address = (chan1),				\
 		.differential = 1,				\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),	\
-		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE) \
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE), \
 		.scan_type = {					\
 			.sign = 'u',				\
 			.realbits = 12,				\
