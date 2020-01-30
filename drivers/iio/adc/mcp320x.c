@@ -239,14 +239,18 @@ static int mcp320x_read_raw(struct iio_dev *indio_dev,
 	int ret = -EINVAL;
 	int device_index = 0;
 
-	mutex_lock(&adc->lock);
-
 	device_index = spi_get_device_id(adc->spi)->driver_data;
 
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
+		ret = iio_device_claim_direct_mode(indio_dev);
+		if (ret)
+			return ret;
+			
 		ret = mcp320x_adc_conversion(adc, channel->address,
 			channel->differential, device_index, val);
+		iio_device_release_direct_mode(indio_dev);
+		
 		if (ret < 0)
 			goto out;
 
@@ -266,7 +270,6 @@ static int mcp320x_read_raw(struct iio_dev *indio_dev,
 	}
 
 out:
-	mutex_unlock(&adc->lock);
 
 	return ret;
 }
@@ -295,7 +298,6 @@ out:
 			.sign = 'u',				\
 			.realbits = 12,				\
 			.storagebits = 16,			\
-			.shift = 3,				\
 			.endianness = IIO_BE,			\
 		},						\
 	}
