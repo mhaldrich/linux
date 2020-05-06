@@ -5,6 +5,8 @@
  * ADC Devices Supported:
  *  adc141s626 - 14-bit ADC
  *  adc161s626 - 16-bit ADC
+ *  mcp3201    - 12-bit ADC
+ *  mcp3301    - 13-bit ADC
  *
  * Copyright (C) 2016-2018
  * Author: Matt Ranostay <matt.ranostay@konsulko.com>
@@ -24,8 +26,49 @@
 #define TI_ADC_DRV_NAME	"ti-adc161s626"
 
 enum {
+	MCP3201,
+	MCP3301,
 	TI_ADC141S626,
 	TI_ADC161S626,
+};
+
+static const struct iio_chan_spec mcp3201_channels[] = {
+		{
+		.type = IIO_VOLTAGE,
+		.indexed = 1,
+		.channel = 0,
+		.channel2 = 1,
+		.address = 0,
+		.differential = 1,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE), \
+		.scan_type = {
+			.sign = 'u',
+			.realbits = 12,
+			.storagebits = 16,
+			},
+		},
+		IIO_CHAN_SOFT_TIMESTAMP(1),
+};
+
+static const struct iio_chan_spec mcp3301_channels[] = {
+	{
+		.type = IIO_VOLTAGE,
+		.indexed = 1,
+		.channel = 0,
+		.channel2 = 1,
+		.address = 0,
+		.differential = 1,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE), \
+		.scan_index = 0,
+		.scan_type = {
+			.sign = 's',
+			.realbits = 13,
+			.storagebits = 16,
+			},
+		},
+		IIO_CHAN_SOFT_TIMESTAMP(1),
 };
 
 static const struct iio_chan_spec ti_adc141s626_channels[] = {
@@ -33,8 +76,8 @@ static const struct iio_chan_spec ti_adc141s626_channels[] = {
 		.type = IIO_VOLTAGE,
 		.channel = 0,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
-				      BIT(IIO_CHAN_INFO_SCALE) |
-				      BIT(IIO_CHAN_INFO_OFFSET),
+					  BIT(IIO_CHAN_INFO_SCALE) |
+					  BIT(IIO_CHAN_INFO_OFFSET),
 		.scan_index = 0,
 		.scan_type = {
 			.sign = 's',
@@ -50,8 +93,8 @@ static const struct iio_chan_spec ti_adc161s626_channels[] = {
 		.type = IIO_VOLTAGE,
 		.channel = 0,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
-				      BIT(IIO_CHAN_INFO_SCALE) |
-				      BIT(IIO_CHAN_INFO_OFFSET),
+					  BIT(IIO_CHAN_INFO_SCALE) |
+					  BIT(IIO_CHAN_INFO_OFFSET),
 		.scan_index = 0,
 		.scan_type = {
 			.sign = 's',
@@ -103,8 +146,13 @@ static int ti_adc_read_measurement(struct ti_adc_data *data,
 		return -EINVAL;
 	}
 
-	*val = sign_extend32(*val >> data->shift, chan->scan_type.realbits - 1);
-
+	/* HACK: use conditional to mask and shift mcp3201 */
+	if (chan->scan_type.realbits == 12) {
+		*val = (*val & 0x1ffe) >> 1;
+	}
+	else {
+		*val = sign_extend32(*val >> data->shift, chan->scan_type.realbits - 1);
+	}
 	return 0;
 }
 
@@ -116,7 +164,7 @@ static irqreturn_t ti_adc_trigger_handler(int irq, void *private)
 	int ret;
 
 	ret = ti_adc_read_measurement(data, &indio_dev->channels[0],
-				     (int *) &data->buffer);
+					 (int *) &data->buffer);
 	if (!ret)
 		iio_push_to_buffers_with_timestamp(indio_dev,
 					data->buffer,
@@ -189,6 +237,18 @@ static int ti_adc_probe(struct spi_device *spi)
 	data->spi = spi;
 
 	switch (spi_get_device_id(spi)->driver_data) {
+	case MCP3201:
+				indio_dev->channels = mcp3201_channels;
+				indio_dev->num_channels = ARRAY_SIZE(mcp3201_channels);
+				data->shift = 0;
+				data->read_size = 2;
+				break;
+	case MCP3301:
+				indio_dev->channels = mcp3301_channels;
+				indio_dev->num_channels = ARRAY_SIZE(mcp3301_channels);
+				data->shift = 0;
+				data->read_size = 2;
+				break;
 	case TI_ADC141S626:
 		indio_dev->channels = ti_adc141s626_channels;
 		indio_dev->num_channels = ARRAY_SIZE(ti_adc141s626_channels);
@@ -243,6 +303,8 @@ static int ti_adc_remove(struct spi_device *spi)
 }
 
 static const struct of_device_id ti_adc_dt_ids[] = {
+	{ .compatible = "microchip,mcp3201", },
+	{ .compatible = "microchip,mcp3301", },
 	{ .compatible = "ti,adc141s626", },
 	{ .compatible = "ti,adc161s626", },
 	{}
@@ -250,6 +312,8 @@ static const struct of_device_id ti_adc_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, ti_adc_dt_ids);
 
 static const struct spi_device_id ti_adc_id[] = {
+	{"mcp3201",    MCP3201},
+	{"mcp3301",    MCP3301},
 	{"adc141s626", TI_ADC141S626},
 	{"adc161s626", TI_ADC161S626},
 	{},
